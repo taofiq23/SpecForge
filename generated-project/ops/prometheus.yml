@@ -1,0 +1,43 @@
+# Prometheus scrape configuration for the local docker-compose stack.
+#
+# Spec section D: "Observability: Prometheus 2-3".
+# Spec section G: "Implement a dashboard for monitoring key metrics."
+#
+# Every component exposes /metrics via prom-client with default labels
+# {application="spacefractions", component=<ComponentName>}.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+
+scrape_configs:
+  - job_name: spacefractions-game
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["game:8081"]
+        labels:
+          component: GameComponent
+
+  - job_name: spacefractions-question
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["question:8082"]
+        labels:
+          component: QuestionComponent
+
+  - job_name: spacefractions-user
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["user:8083"]
+        labels:
+          component: UserComponent
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+# Section G SLOs (99.99% uptime, 1% error budget) expressed as recording rules.
+rule_files:
+  - /etc/prometheus/rules.yml

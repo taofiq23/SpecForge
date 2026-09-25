@@ -1,0 +1,108 @@
+# Recording and alerting rules derived from spec section G:
+#   SLO: 99.99% uptime
+#   Error budget: 1%
+#   RTO: 1 hour, RPO: 1 hour
+
+groups:
+  - name: spacefractions-slo
+    interval: 30s
+    rules:
+      # Section G business metric: game start rate.
+      - record: spacefractions:game_start_rate:5m
+        expr: sum(rate(spacefractions_games_started_total[5m]))
+
+      # Section G business metric: game completion rate.
+      - record: spacefractions:game_completion_ratio:1h
+        expr: |
+          sum(rate(spacefractions_games_completed_total[1h]))
+          /
+          clamp_min(sum(rate(spacefractions_games_started_total[1h])), 1)
+
+      # Section G business metric: question accuracy rate.
+      - record: spacefractions:question_accuracy_ratio:1h
+        expr: |
+          sum(rate(spacefractions_questions_answered_total{correct="true"}[1h]))
+          /
+          clamp_min(sum(rate(spacefractions_questions_answered_total[1h])), 1)
+
+      # SLO 99.99% uptime -> allowed unavailability over 30d is ~4m19s.
+      - record: spacefractions:availability:30d
+        expr: |
+          1 - (
+            sum(rate(spacefractions_http_requests_total{status_code=~"5.."}[30d]))
+            /
+            clamp_min(sum(rate(spacefractions_http_requests_total[30d])), 1)
+          )
+
+      # Error budget consumed (1% of 30d).
+      - record: spacefractions:error_budget_consumed:30d
+        expr: 1 - spacefractions:availability:30d
+
+      # NFR-1 latency budget: 250ms (config.slo.latencyBudgetMs).
+      - record: spacefractions:http_latency_p95:5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (component, le) (rate(spacefractions_http_request_duration_seconds_bucket[5m]))
+          )
+
+  - name: spacefractions-alerts
+    rules:
+      - alert: ErrorBudgetBurnFast
+        expr: spacefractions:error_budget_consumed:30d > 0.01
+        for: 10m
+        labels:
+          severity: critical
+          slo: "99.99%"
+        annotations:
+          summary: "30d error budget (1%) exceeded"
+          runbook: "See ops/runbook.md -> Error budget burn"
+
+      - alert: LatencyBudgetBreach
+        expr: spacefractions:http_latency_p95:5m > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          requirement: NFR-1
+        annotations:
+          summary: "p95 latency above the 250ms NFR-1 budget"
+          runbook: "See ops/runbook.md -> Latency regression"
+
+      - alert: ComponentDown
+        expr: up{job=~"spacefractions-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is not scrapeable"
+          runbook: "See ops/runbook.md -> Component down"
+
+      - alert: GameCompletionRateDrop
+        expr: spacefractions:game_completion_ratio:1h < 0.3
+        for: 30m
+        labels:
+          severity: warning
+          requirement: FR-1
+        annotations:
+          summary: "Game completion rate below 30% over 1h"
+          runbook: "See ops/runbook.md -> Completion rate drop"
+
+      - alert: QuestionAccuracyAnomaly
+        expr: spacefractions:question_accuracy_ratio:1h < 0.2 or spacefractions:question_accuracy_ratio:1h > 0.99
+        for: 30m
+        labels:
+          severity: warning
+          requirement: ASR-1
+        annotations:
+          summary: "Question accuracy rate is implausible - suspect a bad answer key"
+          runbook: "See ops/runbook.md -> Answer key audit (question.question_audit)"
+
+      - alert: ReplicationLagHigh
+        expr: pg_replication_lag_seconds > 300
+        for: 10m
+        labels:
+          severity: critical
+          requirement: ASR-1
+        annotations:
+          summary: "Replication lag risks the 1h RPO"
+          runbook: "See ops/runbook.md -> Replication lag"

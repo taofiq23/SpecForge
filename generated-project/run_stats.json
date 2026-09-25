@@ -1,0 +1,21 @@
+{
+  "stop_reason": "done",
+  "elapsed_seconds": 497.5,
+  "usage": {
+    "input_tokens": 8592746,
+    "output_tokens": 45960
+  },
+  "total_actions": 113,
+  "mutating_actions": 74,
+  "failed_actions": 10,
+  "actions_by_tool": {
+    "read_file": 33,
+    "grep_search": 5,
+    "multi_edit": 5,
+    "run_shell": 44,
+    "write_file": 12,
+    "edit_file": 10,
+    "update_plan": 3,
+    "list_files": 1
+  }
+}

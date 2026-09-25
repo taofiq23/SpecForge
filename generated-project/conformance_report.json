@@ -1,0 +1,405 @@
+{
+  "strict_score": 0.5333,
+  "lenient_score": 0.6,
+  "elements": [
+    {
+      "name": "Game",
+      "kind": "class",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/game/src/domain/game.js",
+          "line": 8,
+          "text": "*   class Game {"
+        },
+        {
+          "file": "services/game/src/domain/game.js",
+          "line": 24,
+          "text": "class Game {"
+        },
+        {
+          "file": "shared/src/domain/index.js",
+          "line": 10,
+          "text": "*   class Game     { -id: string; -score: int; +play(): void; +viewScore(): int }"
+        }
+      ],
+      "methods_found": [
+        "play",
+        "viewScore"
+      ],
+      "methods_missing": []
+    },
+    {
+      "name": "Question",
+      "kind": "class",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/question/src/domain/question.js",
+          "line": 8,
+          "text": "*   class Question {"
+        },
+        {
+          "file": "services/question/src/domain/question.js",
+          "line": 19,
+          "text": "class Question {"
+        },
+        {
+          "file": "shared/src/domain/index.js",
+          "line": 11,
+          "text": "*   class Question { -id: string; -prompt: string; -options: List<string>;"
+        }
+      ],
+      "methods_found": [
+        "getPrompt",
+        "getOptions"
+      ],
+      "methods_missing": []
+    },
+    {
+      "name": "User",
+      "kind": "class",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/user/src/domain/user.js",
+          "line": 11,
+          "text": "*   class User {"
+        },
+        {
+          "file": "services/user/src/domain/user.js",
+          "line": 28,
+          "text": "class User {"
+        },
+        {
+          "file": "shared/src/domain/index.js",
+          "line": 13,
+          "text": "*   class User     { -id: string; -username: string;"
+        }
+      ],
+      "methods_found": [
+        "playGame",
+        "viewScore"
+      ],
+      "methods_missing": []
+    },
+    {
+      "name": "Admin",
+      "kind": "class",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/admin/src/service/adminService.js",
+          "line": 16,
+          "text": "*   class Admin {"
+        },
+        {
+          "file": "services/user/src/domain/user.js",
+          "line": 17,
+          "text": "*   class Admin {"
+        },
+        {
+          "file": "services/user/src/domain/user.js",
+          "line": 128,
+          "text": "class Admin extends User {"
+        }
+      ],
+      "methods_found": [
+        "updateQuestions"
+      ],
+      "methods_missing": []
+    },
+    {
+      "name": "GameComponent",
+      "kind": "component",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/game/src/component.js",
+          "line": 38,
+          "text": "class GameComponent {"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "QuestionComponent",
+      "kind": "component",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/question/src/component.js",
+          "line": 32,
+          "text": "class QuestionComponent {"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "UserComponent",
+      "kind": "component",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/user/src/component.js",
+          "line": 25,
+          "text": "class UserComponent {"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "AdminComponent",
+      "kind": "component",
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "services/admin/src/component.js",
+          "line": 41,
+          "text": "class AdminComponent {"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "GameServer",
+      "kind": "component",
+      "status": "referenced",
+      "evidence": [
+        {
+          "file": "services/admin/src/routes/adminRoutes.js",
+          "line": 12,
+          "text": "* node wired `GameServer -- AdminClient`, and previously AdminClient called the"
+        },
+        {
+          "file": "services/admin/src/routes/adminRoutes.js",
+          "line": 13,
+          "text": "* GameServer. In the browser the game and the admin screen are same-origin when"
+        },
+        {
+          "file": "services/game/src/component.js",
+          "line": 25,
+          "text": "*                             (DeploymentDiagram: GameServer -- UserClient /"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "QuestionServer",
+      "kind": "component",
+      "status": "referenced",
+      "evidence": [
+        {
+          "file": "services/game/src/routes/uiRoutes.js",
+          "line": 16,
+          "text": "*   node QuestionServer"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "UserClient",
+      "kind": "component",
+      "status": "referenced",
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 282,
+          "text": "questions, and an ending scene\". The container/deployment diagrams name `UserClient` and"
+        },
+        {
+          "file": "README.md",
+          "line": 286,
+          "text": "and the deliverables list asks for no UI artifact. The `UserClient` / `AdminClient` boxes are"
+        },
+        {
+          "file": "services/game/src/component.js",
+          "line": 24,
+          "text": "*   - the UserClient/AdminClient static UI"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "AdminClient",
+      "kind": "component",
+      "status": "referenced",
+      "evidence": [
+        {
+          "file": "openapi.yaml",
+          "line": 436,
+          "text": "as a same-origin proxy (for the AdminClient screen served from /admin),"
+        },
+        {
+          "file": "README.md",
+          "line": 283,
+          "text": "`AdminClient`. The spec never names a frontend framework."
+        },
+        {
+          "file": "README.md",
+          "line": 286,
+          "text": "and the deliverables list asks for no UI artifact. The `UserClient` / `AdminClient` boxes are"
+        }
+      ],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "GameContainer",
+      "kind": "component",
+      "status": "missing",
+      "evidence": [],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "QuestionContainer",
+      "kind": "component",
+      "status": "missing",
+      "evidence": [],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "UserContainer",
+      "kind": "component",
+      "status": "missing",
+      "evidence": [],
+      "methods_found": [],
+      "methods_missing": []
+    },
+    {
+      "name": "AdminContainer",
+      "kind": "component",
+      "status": "missing",
+      "evidence": [],
+      "methods_found": [],
+      "methods_missing": []
+    }
+  ],
+  "relationships": [
+    {
+      "a": "Game",
+      "b": "Question",
+      "status": "found",
+      "evidence": {
+        "file": "services/game/src/domain/game.js",
+        "line": 21,
+        "text": "* Game --* Question (composition) from the class diagram: a game owns the"
+      }
+    },
+    {
+      "a": "User",
+      "b": "Game",
+      "status": "found",
+      "evidence": {
+        "file": "services/user/src/domain/user.js",
+        "line": 14,
+        "text": "*     + playGame(game: Game): void"
+      }
+    },
+    {
+      "a": "Admin",
+      "b": "Question",
+      "status": "found",
+      "evidence": {
+        "file": "services/admin/src/service/adminService.js",
+        "line": 19,
+        "text": "*     + updateQuestions(questions: List<Question>): void"
+      }
+    },
+    {
+      "a": "Game",
+      "b": "User",
+      "status": "found",
+      "evidence": {
+        "file": "services/game/src/domain/game.js",
+        "line": 30,
+        "text": "* @param {object} [props.user]"
+      }
+    },
+    {
+      "a": "Game",
+      "b": "Admin",
+      "status": "found",
+      "evidence": {
+        "file": "shared/src/domain/index.js",
+        "line": 15,
+        "text": "*   class Admin    { -id: string; -username: string;"
+      }
+    },
+    {
+      "a": "GameComponent",
+      "b": "QuestionComponent",
+      "status": "found",
+      "evidence": {
+        "file": "services/game/src/component.js",
+        "line": 8,
+        "text": "*   artifact QuestionComponent"
+      }
+    },
+    {
+      "a": "GameComponent",
+      "b": "UserComponent",
+      "status": "found",
+      "evidence": {
+        "file": "services/game/src/component.js",
+        "line": 9,
+        "text": "*   artifact UserComponent"
+      }
+    },
+    {
+      "a": "GameComponent",
+      "b": "AdminComponent",
+      "status": "found",
+      "evidence": {
+        "file": "services/game/src/component.js",
+        "line": 10,
+        "text": "*   artifact AdminComponent"
+      }
+    },
+    {
+      "a": "GameServer",
+      "b": "QuestionServer",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "a": "GameServer",
+      "b": "UserClient",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "a": "GameServer",
+      "b": "AdminClient",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "a": "GameContainer",
+      "b": "QuestionContainer",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "a": "GameContainer",
+      "b": "UserContainer",
+      "status": "missing",
+      "evidence": null
+    },
+    {
+      "a": "GameContainer",
+      "b": "AdminContainer",
+      "status": "missing",
+      "evidence": null
+    }
+  ]
+}

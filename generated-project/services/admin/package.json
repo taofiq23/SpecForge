@@ -1,0 +1,14 @@
+{
+  "name": "@spacefractions/admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AdminComponent - admin surface (Update Questions) for Space Fractions. Hosted as a real module inside the GameComponent process, or runnable standalone.",
+  "main": "src/component.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@spacefractions/shared": "*",
+    "express": "^4.19.2"
+  }
+}

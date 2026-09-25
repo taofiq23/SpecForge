@@ -1,0 +1,4 @@
+Requirement ID,Short Text,Diagram(s),Component(s),Artifact filename(s),Rationale
+FR-1,Play game,UseCaseDiagram,GameComponent,openapi.yaml,Allows users to play the game
+NFR-1,Performance,SequenceDiagram1,GameComponent,internal.proto,Ensures the game responds quickly to user input
+ASR-1,Data durability,DeploymentDiagram,QuestionComponent,sql/question_ddl.sql,Ensures that question data is persisted and recoverable

@@ -1,0 +1,23 @@
+# The Dockerfile installs dependencies itself in the `deps` stage, so the host
+# node_modules must never be sent as build context.
+node_modules/
+*/node_modules/
+services/*/node_modules/
+shared/node_modules/
+
+# Build/test output that the image does not need
+coverage/
+generated/
+dist/
+build/
+testout.txt
+
+# Local-only artifacts
+.git/
+.gitignore
+install.log
+*.log
+.env
+.env.*
+spec.json
+traceability_matrix_details.csv

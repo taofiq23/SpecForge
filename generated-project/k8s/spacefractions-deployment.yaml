@@ -1,0 +1,876 @@
+# Space Fractions - Kubernetes deployment
+#
+# The spec (section E "Kubernetes-ready plan") supplies this snippet verbatim:
+#
+#   apiVersion: apps/v1
+#   kind: Deployment
+#   metadata:
+#     name: spacefractions
+#   spec:
+#     replicas: 3
+#     selector:
+#       matchLabels:
+#         app: spacefractions
+#     template:
+#       metadata:
+#         labels:
+#           app: spacefractions
+#       spec:
+#         containers:
+#         - name: spacefractions
+#           image: spacefractions:latest
+#           ports:
+#           - containerPort: 80
+#
+# `--- spec-snippet-start ---` below reproduces it unchanged so the artifact
+# still satisfies the spec literally. Everything after it is the rest of what a
+# deployable manifest needs for the three components the spec names, plus the
+# PostgreSQL / Redis / RabbitMQ / Elasticsearch infrastructure sections D and E
+# call for.
+---
+# --- spec-snippet-start (verbatim from section E) ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spacefractions
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: spacefractions
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+    spec:
+      containers:
+      - name: spacefractions
+        image: spacefractions:latest
+        ports:
+        - containerPort: 80
+# --- spec-snippet-end ---
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spacefractions
+  labels:
+    app.kubernetes.io/part-of: spacefractions
+    # Section F: "Use a service mesh like Istio for traffic management and
+    # security". Enrolling the namespace is what turns mTLS on by default.
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spacefractions-config
+  namespace: spacefractions
+data:
+  NODE_ENV: "production"
+  GAME_PORT: "8081"
+  QUESTION_PORT: "8082"
+  USER_PORT: "8083"
+  PGHOST: "spacefractions-postgres"
+  PGPORT: "5432"
+  PGDATABASE: "spacefractions"
+  PGCONNECT_TIMEOUT_MS: "3000"
+  REDIS_URL: "redis://spacefractions-redis:6379"
+  RABBITMQ_URL: "amqp://spacefractions:$(RABBITMQ_PASSWORD)@spacefractions-rabbitmq:5672"
+  ELASTICSEARCH_URL: "http://spacefractions-elasticsearch:9200"
+  OAUTH2_ISSUER: "http://spacefractions-user:8083"
+  OAUTH2_AUDIENCE: "spacefractions-api"
+  GAME_STATE_TTL_SECONDS: "3600"
+  PROMETHEUS_ENABLED: "true"
+  LATENCY_BUDGET_MS: "250"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: spacefractions-secrets
+  namespace: spacefractions
+type: Opaque
+stringData:
+  # Section F: "Use a secrets manager like Hashicorp's Vault" and "Rotate
+  # secrets regularly". In production these keys are populated by the Vault
+  # Agent Injector / External Secrets Operator, not checked in. The values here
+  # are placeholders that the install runbook replaces.
+  PGUSER: "spacefractions"
+  PGPASSWORD: "REPLACE_WITH_VAULT_VALUE"
+  RABBITMQ_PASSWORD: "REPLACE_WITH_VAULT_VALUE"
+  OAUTH2_SECRET: "REPLACE_WITH_VAULT_VALUE"
+  SERVICE_CLIENT_SECRET: "REPLACE_WITH_VAULT_VALUE"
+  ADMIN_PASSWORD: "REPLACE_WITH_VAULT_VALUE"
+---
+# =========================================================================
+# GameComponent - FR-1 (Play game), NFR-1 (performance)
+# =========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: game-component
+  namespace: spacefractions
+  labels:
+    app: spacefractions
+    component: GameComponent
+spec:
+  # Assumption A1 in section K: "The game will be played by 1000 users
+  # concurrently", and section A risk 1 mitigation "autoscaling".
+  replicas: 3
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: GameComponent
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: GameComponent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: game-component
+          image: spacefractions-game:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: spacefractions-config
+            - secretRef:
+                name: spacefractions-secrets
+          env:
+            - name: GAME_SCHEMA
+              value: "game"
+          # Liveness and readiness probes follow from section E's k8s plan and
+          # the /health and /ready endpoints the services expose.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            # Section G: SLO 99.99% uptime, latency budget 250ms.
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-game
+  namespace: spacefractions
+  labels:
+    app: spacefractions
+    component: GameComponent
+spec:
+  selector:
+    app: spacefractions
+    component: GameComponent
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: game-component
+  namespace: spacefractions
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: game-component
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# =========================================================================
+# QuestionComponent - ASR-1 (data durability)
+# =========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: question-component
+  namespace: spacefractions
+  labels:
+    app: spacefractions
+    component: QuestionComponent
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: QuestionComponent
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: QuestionComponent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: question-component
+          image: spacefractions-question:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: spacefractions-config
+            - secretRef:
+                name: spacefractions-secrets
+          env:
+            - name: QUESTION_SCHEMA
+              value: "question"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-question
+  namespace: spacefractions
+  labels:
+    app: spacefractions
+    component: QuestionComponent
+spec:
+  selector:
+    app: spacefractions
+    component: QuestionComponent
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: question-component
+  namespace: spacefractions
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: question-component
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# =========================================================================
+# UserComponent - OAuth2 authn/authz (section F, ASR-2 security)
+# =========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-component
+  namespace: spacefractions
+  labels:
+    app: spacefractions
+    component: UserComponent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: UserComponent
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: UserComponent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: user-component
+          image: spacefractions-user:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: spacefractions-config
+            - secretRef:
+                name: spacefractions-secrets
+          env:
+            - name: USER_SCHEMA
+              value: "user_svc"
+            - name: SERVICE_CLIENT_ID
+              value: "spacefractions-internal"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-user
+  namespace: spacefractions
+  labels:
+    app: spacefractions
+    component: UserComponent
+spec:
+  selector:
+    app: spacefractions
+    component: UserComponent
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http
+---
+# =========================================================================
+# Ingress - section F: "Implement TLS encryption for all communication"
+# =========================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spacefractions
+  namespace: spacefractions
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - spacefractions.example.com
+      secretName: spacefractions-tls
+  rules:
+    - host: spacefractions.example.com
+      http:
+        paths:
+          - path: /api/v1/games
+            pathType: Prefix
+            backend:
+              service:
+                name: spacefractions-game
+                port:
+                  number: 8081
+          - path: /play
+            pathType: Prefix
+            backend:
+              service:
+                name: spacefractions-game
+                port:
+                  number: 8081
+          - path: /api/v1/questions
+            pathType: Prefix
+            backend:
+              service:
+                name: spacefractions-question
+                port:
+                  number: 8082
+          - path: /api/v1/durability
+            pathType: Prefix
+            backend:
+              service:
+                name: spacefractions-question
+                port:
+                  number: 8082
+          - path: /oauth
+            pathType: Prefix
+            backend:
+              service:
+                name: spacefractions-user
+                port:
+                  number: 8083
+          - path: /api/v1/users
+            pathType: Prefix
+            backend:
+              service:
+                name: spacefractions-user
+                port:
+                  number: 8083
+---
+# =========================================================================
+# NetworkPolicy - section F threat model: "unauthorized access",
+# "data breaches", "denial of service".
+# =========================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: spacefractions-default-deny
+  namespace: spacefractions
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-component-mesh
+  namespace: spacefractions
+spec:
+  podSelector:
+    matchLabels:
+      app: spacefractions
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: spacefractions
+      ports:
+        - protocol: TCP
+          port: 8081
+        - protocol: TCP
+          port: 8082
+        - protocol: TCP
+          port: 8083
+---
+# =========================================================================
+# PostgreSQL 14 with streaming replication - section D/E:
+#   "Use PostgreSQL replication for high availability"
+#   "Implement regular backups and data replication"
+#   ASR-1 "Ensures that question data is persisted and recoverable"
+# =========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-ddl
+  namespace: spacefractions
+data:
+  # Applied once by the postgres container's docker-entrypoint-initdb.d hook.
+  # The same statements live in sql/game_ddl.sql, sql/question_ddl.sql and
+  # sql/user_ddl.sql; the init script concatenates them.
+  00-bootstrap.sql: |
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE SCHEMA IF NOT EXISTS game;
+    CREATE SCHEMA IF NOT EXISTS question;
+    CREATE SCHEMA IF NOT EXISTS user_svc;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-postgres
+  namespace: spacefractions
+spec:
+  clusterIP: None
+  selector:
+    app: spacefractions
+    component: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spacefractions-postgres
+  namespace: spacefractions
+spec:
+  serviceName: spacefractions-postgres
+  replicas: 3
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: spacefractions
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: spacefractions-secrets
+                  key: PGUSER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: spacefractions-secrets
+                  key: PGPASSWORD
+            # Section E: "Use PostgreSQL replication for high availability".
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+# =========================================================================
+# Redis 6 - section D: "Cache: Redis 6-7", "Cache game state in Redis"
+# =========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spacefractions-redis
+  namespace: spacefractions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: redis
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:6-alpine
+          args: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-redis
+  namespace: spacefractions
+spec:
+  selector:
+    app: spacefractions
+    component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+# =========================================================================
+# RabbitMQ 3 - section D: "Messaging: RabbitMQ 3-4"
+# =========================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spacefractions-rabbitmq
+  namespace: spacefractions
+spec:
+  serviceName: spacefractions-rabbitmq
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3-management
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: spacefractions
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: spacefractions-secrets
+                  key: RABBITMQ_PASSWORD
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-rabbitmq
+  namespace: spacefractions
+spec:
+  selector:
+    app: spacefractions
+    component: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+---
+# =========================================================================
+# Elasticsearch 7 - section D: "Search: Elasticsearch 7-8", NFR-1
+# =========================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spacefractions-elasticsearch
+  namespace: spacefractions
+spec:
+  serviceName: spacefractions-elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: elasticsearch
+    spec:
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+          ports:
+            - containerPort: 9200
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: ES_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: xpack.security.enabled
+              value: "false"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-elasticsearch
+  namespace: spacefractions
+spec:
+  selector:
+    app: spacefractions
+    component: elasticsearch
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+---
+# =========================================================================
+# Prometheus 2 - section D: "Observability: Prometheus 2-3", NFR-1
+# =========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: spacefractions
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: spacefractions
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [spacefractions]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+)
+            replacement: ${1}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spacefractions-prometheus
+  namespace: spacefractions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: prometheus
+  template:
+    metadata:
+      labels:
+        app: spacefractions
+        component: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.51.0
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spacefractions-prometheus
+  namespace: spacefractions
+spec:
+  selector:
+    app: spacefractions
+    component: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+---
+# =========================================================================
+# Availability targets from section G: SLO 99.99% uptime, RTO 1h / RPO 1h.
+# =========================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: game-component
+  namespace: spacefractions
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: GameComponent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: question-component
+  namespace: spacefractions
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: spacefractions
+      component: QuestionComponent

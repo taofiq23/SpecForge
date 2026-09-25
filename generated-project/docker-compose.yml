@@ -1,0 +1,207 @@
+# Space Fractions - local development stack
+#
+# Brings up every technology the spec names in section D, so the generated code
+# talks to real instances rather than mocks:
+#
+#   PostgreSQL 14      persistence        (GameComponent, QuestionComponent, UserComponent)
+#   Redis 6            cache              (GameComponent game state, QuestionComponent read cache)
+#   RabbitMQ 3         messaging          (event exchange, section 9 of architecture.md)
+#   Elasticsearch 7    search             (question search, NFR-1)
+#   Prometheus 2       observability      (scrapes every component's /metrics)
+#   game / question / user              the three microservices
+#
+# Usage:
+#   docker compose up -d
+#   curl http://localhost:8081/play
+#
+# The schema DDL in sql/ is applied by the PostgreSQL entrypoint on first boot.
+
+name: spacefractions
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: spacefractions-postgres
+    environment:
+      POSTGRES_DB: spacefractions
+      POSTGRES_USER: spacefractions
+      POSTGRES_PASSWORD: spacefractions
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Applied in filename order on first initialisation. The 00-bootstrap file
+      # creates the schemas the per-component DDL expects.
+      - ./sql/00_bootstrap.sql:/docker-entrypoint-initdb.d/00-bootstrap.sql:ro
+      - ./sql/game_ddl.sql:/docker-entrypoint-initdb.d/01-game.sql:ro
+      - ./sql/question_ddl.sql:/docker-entrypoint-initdb.d/02-question.sql:ro
+      - ./sql/user_ddl.sql:/docker-entrypoint-initdb.d/03-user.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spacefractions -d spacefractions"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:6-alpine
+    container_name: spacefractions-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: spacefractions-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: spacefractions
+      RABBITMQ_DEFAULT_PASS: spacefractions
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+    container_name: spacefractions-elasticsearch
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      xpack.security.enabled: "false"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: spacefractions-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus-rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - game
+      - question
+      - user
+
+  game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: game
+    image: spacefractions:latest
+    container_name: spacefractions-game
+    environment:
+      NODE_ENV: production
+      GAME_PORT: "8081"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: spacefractions
+      PGPASSWORD: spacefractions
+      PGDATABASE: spacefractions
+      GAME_SCHEMA: game
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://spacefractions:spacefractions@rabbitmq:5672
+      QUESTION_BASE_URL: http://question:8082
+      USER_BASE_URL: http://user:8083
+      OAUTH2_ISSUER: http://user:8083
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  question:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: question
+    image: spacefractions-question:latest
+    container_name: spacefractions-question
+    environment:
+      NODE_ENV: production
+      QUESTION_PORT: "8082"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: spacefractions
+      PGPASSWORD: spacefractions
+      PGDATABASE: spacefractions
+      QUESTION_SCHEMA: question
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://spacefractions:spacefractions@rabbitmq:5672
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      OAUTH2_ISSUER: http://user:8083
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  user:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: user
+    image: spacefractions-user:latest
+    container_name: spacefractions-user
+    environment:
+      NODE_ENV: production
+      USER_PORT: "8083"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: spacefractions
+      PGPASSWORD: spacefractions
+      PGDATABASE: spacefractions
+      USER_SCHEMA: user_svc
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://spacefractions:spacefractions@rabbitmq:5672
+      OAUTH2_ISSUER: http://localhost:8083
+      OAUTH2_AUDIENCE: spacefractions-api
+      OAUTH2_SECRET: spacefractions-dev-secret-change-me
+      SERVICE_CLIENT_ID: spacefractions-internal
+      SERVICE_CLIENT_SECRET: internal-secret-change-me
+      ADMIN_PASSWORD: admin-spacefractions
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  elasticsearch-data:
+  prometheus-data:

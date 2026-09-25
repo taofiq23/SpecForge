@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Space Fractions</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="stars" aria-hidden="true"></div>
+
+  <main id="app">
+    <!-- ================= 1. INTRODUCTORY MOVIE (section A) ================ -->
+    <section id="scene-intro" class="scene active" aria-labelledby="intro-title">
+      <div class="movie">
+        <div class="movie-stars">
+          <span class="meteor" style="--d:0s;--x:10%"></span>
+          <span class="meteor" style="--d:0.9s;--x:38%"></span>
+          <span class="meteor" style="--d:1.7s;--x:66%"></span>
+          <span class="meteor" style="--d:2.5s;--x:86%"></span>
+        </div>
+        <div class="rocket" role="img" aria-label="A rocket flying through space">&#128640;</div>
+        <h1 id="intro-title">Space Fractions</h1>
+        <p class="movie-line line-1">Mission control needs a fraction expert.</p>
+        <p class="movie-line line-2">Refuel the ship by solving fraction puzzles.</p>
+        <p class="movie-line line-3">Every correct answer is one more light-year home.</p>
+        <div class="movie-controls">
+          <button id="btn-movie-skip" class="btn ghost" type="button">Skip intro</button>
+          <button id="btn-movie-continue" class="btn primary" type="button">Launch &#8594;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 2. MAIN MENU ===================================== -->
+    <section id="scene-menu" class="scene" aria-labelledby="menu-title">
+      <h1 id="menu-title">Main Menu</h1>
+      <p class="lede" id="menu-lede">Choose a mission.</p>
+      <div class="menu-grid">
+        <div class="menu-card">
+          <h2>Start a mission</h2>
+          <label for="input-difficulty">Difficulty</label>
+          <select id="input-difficulty">
+            <option value="">Mixed (recommended)</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+          <label for="input-count">Number of questions</label>
+          <select id="input-count">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="15">15</option>
+          </select>
+          <label for="input-name">Pilot name (optional)</label>
+          <input id="input-name" type="text" placeholder="Cadet" maxlength="32" />
+          <button id="btn-start" class="btn primary" type="button">Play Game</button>
+        </div>
+        <div class="menu-card">
+          <h2>More</h2>
+          <button id="btn-help" class="btn" type="button">View Help</button>
+          <button id="btn-leaderboard" class="btn" type="button">View Score (leaderboard)</button>
+          <button id="btn-replay-intro" class="btn ghost" type="button">Replay intro</button>
+          <a class="btn ghost" href="/admin">Admin: Update Questions</a>
+        </div>
+      </div>
+      <aside id="menu-panel" class="panel" hidden></aside>
+      <p id="menu-status" class="status" role="status"></p>
+    </section>
+
+    <!-- ================= 3. QUESTION SCREENS ============================== -->
+    <section id="scene-question" class="scene" aria-labelledby="q-prompt">
+      <header class="hud">
+        <span id="hud-progress">Question 1 / 1</span>
+        <span id="hud-score">Score 0</span>
+        <span id="hud-state" class="pill">Playing</span>
+        <span id="hud-timer">0.0s</span>
+      </header>
+      <div class="question-card">
+        <p class="prompt-label">Solve:</p>
+        <h2 id="q-prompt">Loading question&#8230;</h2>
+        <ul id="q-options" class="options"></ul>
+        <form id="answer-form" class="answer-form">
+          <label for="q-answer">Or type the answer (e.g. 3/4)</label>
+          <div class="answer-row">
+            <input id="q-answer" type="text" inputmode="text" autocomplete="off" placeholder="3/4" />
+            <button id="btn-submit" class="btn primary" type="submit">Submit answer</button>
+          </div>
+        </form>
+        <div id="q-result" class="result" role="status" aria-live="polite"></div>
+      </div>
+      <footer class="scene-actions">
+        <button id="btn-pause" class="btn" type="button">Pause</button>
+        <button id="btn-resume" class="btn" type="button" hidden>Resume</button>
+        <button id="btn-quit" class="btn ghost" type="button">End mission</button>
+      </footer>
+    </section>
+
+    <!-- ================= 4. ENDING SCENE / FEEDBACK ======================= -->
+    <section id="scene-ending" class="scene" aria-labelledby="ending-title">
+      <h1 id="ending-title">Mission Report</h1>
+      <div class="ending">
+        <p class="ending-emoji" id="ending-emoji" role="img" aria-label="Result">&#127881;</p>
+        <p id="ending-message" class="ending-message"></p>
+        <dl class="scoreboard">
+          <div><dt>Score</dt><dd id="ending-score">0</dd></div>
+          <div><dt>Correct</dt><dd id="ending-correct">0 / 0</dd></div>
+          <div><dt>Accuracy</dt><dd id="ending-accuracy">0%</dd></div>
+          <div><dt>State</dt><dd id="ending-state">&mdash;</dd></div>
+        </dl>
+        <div class="review">
+          <h2>Answer review</h2>
+          <table id="review-table">
+            <thead>
+              <tr><th>Question</th><th>Your answer</th><th>Correct</th><th>Right answer</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="movie-controls">
+          <button id="btn-play-again" class="btn primary" type="button">Play again</button>
+          <button id="btn-ending-menu" class="btn" type="button">Main menu</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/ui-config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

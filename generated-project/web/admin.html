@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Space Fractions - Admin</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="stars" aria-hidden="true"></div>
+  <main id="app" class="admin-wrap">
+    <header class="admin-bar">
+      <h1 style="font-size:1.6rem;margin:0">AdminComponent</h1>
+      <span class="badge">Update Questions</span>
+      <span id="admin-who" class="hint"></span>
+      <a class="btn ghost" href="/" style="margin-left:auto">&#8592; Back to game</a>
+    </header>
+
+    <section class="menu-card" id="admin-login">
+      <h2>Sign in (OAuth2 password grant, section F)</h2>
+      <p class="hint">
+        The admin API is gated on an admin bearer token carrying the
+        <code>update_questions</code> scope. The token is obtained from
+        UserComponent's <code>POST /oauth/token</code>.
+      </p>
+      <div class="field">
+        <label for="admin-username">Username</label>
+        <input id="admin-username" type="text" value="admin" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="admin-password">Password</label>
+        <input id="admin-password" type="password" autocomplete="current-password" />
+      </div>
+      <div class="field">
+        <label for="admin-token">...or paste an access token directly</label>
+        <input id="admin-token" type="password" placeholder="eyJhbGciOi..." />
+      </div>
+      <div class="admin-bar">
+        <button id="btn-login" class="btn primary" type="button">Sign in</button>
+        <button id="btn-logout" class="btn ghost" type="button">Sign out</button>
+      </div>
+      <p id="admin-auth-status" class="status" role="status"></p>
+    </section>
+
+    <section id="admin-main" hidden>
+      <div class="admin-grid">
+        <div class="menu-card">
+          <h2>Question bank</h2>
+          <div class="admin-bar">
+            <button id="btn-refresh" class="btn" type="button">Refresh</button>
+            <select id="admin-filter">
+              <option value="">All difficulties</option>
+              <option value="easy">easy</option>
+              <option value="medium">medium</option>
+              <option value="hard">hard</option>
+            </select>
+            <input id="admin-search" type="text" placeholder="Search prompt..." style="flex:1 1 140px" />
+            <button id="btn-search" class="btn" type="button">Search</button>
+          </div>
+          <p id="admin-list-status" class="status" role="status"></p>
+          <div id="admin-list"></div>
+        </div>
+
+        <div class="menu-card">
+          <h2 id="form-title">Create question</h2>
+          <p class="hint">Options are comma-separated. The correct option must exactly match one option.</p>
+          <div class="field">
+            <label for="f-prompt">Prompt</label>
+            <input id="f-prompt" type="text" placeholder="What is 1/2 + 1/4?" />
+          </div>
+          <div class="field">
+            <label for="f-options">Options (comma separated)</label>
+            <input id="f-options" type="text" placeholder="2/6, 3/4, 1/6" />
+          </div>
+          <div class="field">
+            <label for="f-correct">Correct option</label>
+            <input id="f-correct" type="text" placeholder="3/4" />
+          </div>
+          <div class="field">
+            <label for="f-difficulty">Difficulty</label>
+            <select id="f-difficulty">
+              <option value="easy">easy</option>
+              <option value="medium" selected>medium</option>
+              <option value="hard">hard</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-tags">Tags (comma separated)</label>
+            <input id="f-tags" type="text" placeholder="addition, fractions" />
+          </div>
+          <div class="admin-bar">
+            <button id="btn-save" class="btn primary" type="button">Save question</button>
+            <button id="btn-new" class="btn ghost" type="button">New / clear</button>
+          </div>
+          <p id="admin-save-status" class="status" role="status"></p>
+        </div>
+      </div>
+
+      <div class="menu-card" style="margin-top:18px">
+        <h2>Mission statistics (section G: game completion rate)</h2>
+        <div id="admin-stats" class="hint">Not loaded.</div>
+        <button id="btn-stats" class="btn" type="button" style="margin-top:10px">Load stats</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/ui-config.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

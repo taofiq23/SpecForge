@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+*/node_modules/
+services/*/node_modules/
+shared/node_modules/
+
+# Build output
+generated/
+dist/
+build/
+
+# Test output
+coverage/
+testout.txt
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Logs / scratch
+*.log
+npm-debug.log*
+install.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

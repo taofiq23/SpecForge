@@ -1,0 +1,16 @@
+# Python (the agent itself)
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Node (the generated project)
+generated-project/node_modules/
+generated-project/package-lock.json.tmp
+
+# Never commit secrets - the DeepSeek key used for these runs was passed as an environment
+# variable on the command line, never written to a file, but this is a backstop in case that
+# ever changes.
+.env
+*.env

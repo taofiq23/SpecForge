@@ -1,0 +1,31 @@
+{
+  "name": "space-fractions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Space Fractions - microservices fractions learning game for sixth-grade students",
+  "workspaces": [
+    "services/game",
+    "services/question",
+    "services/user",
+    "services/admin",
+    "shared"
+  ],
+  "scripts": {
+    "test": "jest --config jest.config.js --runInBand",
+    "test:watch": "jest --config jest.config.js --watch",
+    "test:coverage": "jest --config jest.config.js --runInBand --coverage",
+    "start": "node services/game/src/server.js",
+    "start:game": "node services/game/src/server.js",
+    "start:question": "node services/question/src/server.js",
+    "start:user": "node services/user/src/server.js",
+    "start:admin": "node services/admin/src/server.js",
+    "smoke:ui": "node scripts/smoke-ui.js",
+    "proto:gen": "grpc_tools_node_protoc --js_out=import_style=commonjs,binary:./generated --grpc_out=grpc_js:./generated -I . internal.proto"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

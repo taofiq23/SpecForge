@@ -1,0 +1,749 @@
+openapi: 3.0.0
+info:
+  title: Space Fractions API
+  description: API for the Space Fractions game
+  version: 1.0.0
+paths:
+  /play:
+    get:
+      summary: Play the game
+      responses:
+        200:
+          description: Game started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gameId:
+                    type: integer
+                    description: Game ID
+  # ---------------------------------------------------------------------------
+  # Everything below this line was NOT in the architecture spec.
+  #
+  # The spec supplies exactly one path (/play). The components it names
+  # (GameComponent, QuestionComponent, UserComponent) and the diagrams it
+  # includes (UseCaseDiagram, SequenceDiagram1, SequenceDiagram2, StateDiagram)
+  # require more than one endpoint to be implementable. These are the routes the
+  # generated services actually serve. They are additive: /play above is
+  # byte-for-byte what the spec asked for. See README -> "Underspecified areas".
+  # ---------------------------------------------------------------------------
+
+  /api/v1/games:
+    post:
+      summary: Start a new game (FR-1 Play Game)
+      tags: [GameComponent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                questionCount:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                  default: 10
+                difficulty:
+                  $ref: '#/components/schemas/Difficulty'
+      responses:
+        '201':
+          description: Game created and in the Playing state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/games/{gameId}:
+    get:
+      summary: Get the current question prompt and progress
+      tags: [GameComponent]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Current prompt (SequenceDiagram1: "display prompt")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptView'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/games/{gameId}/answers:
+    post:
+      summary: Submit an answer (SequenceDiagram1 "submit answer" -> "display result")
+      tags: [GameComponent]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questionId, answer]
+              properties:
+                questionId:
+                  type: string
+                answer:
+                  type: string
+                timeMs:
+                  type: integer
+                  description: Client-measured response time, used for NFR-1 latency metrics
+      responses:
+        '200':
+          description: Graded result and the next prompt (or final feedback)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Illegal state (game over, paused, or question already answered)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/games/{gameId}/score:
+    get:
+      summary: View the score for a game (UseCaseDiagram View Score)
+      tags: [GameComponent]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Score and feedback summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feedback'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/games/{gameId}/pause:
+    post:
+      summary: Pause the game (StateDiagram pause())
+      tags: [GameComponent]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: New game state (Paused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameState'
+        '409':
+          description: Illegal transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/games/{gameId}/resume:
+    post:
+      summary: Resume the game (StateDiagram resume())
+      tags: [GameComponent]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: New game state (Playing)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameState'
+        '409':
+          description: Illegal transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/games/{gameId}/gameover:
+    post:
+      summary: End the game (StateDiagram gameOver())
+      tags: [GameComponent]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Final state and feedback (ending scene)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Feedback'
+
+  /api/v1/leaderboard:
+    get:
+      summary: Top scores
+      tags: [GameComponent]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10, maximum: 100 }
+        - name: userId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit: { type: integer }
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        game_uid: { type: string }
+                        score: { type: integer }
+                        state: { type: string }
+                        username: { type: string, nullable: true }
+                        updated_at: { type: string, format: date-time }
+
+  /api/v1/help:
+    get:
+      summary: Fraction help content (UseCaseDiagram View Help)
+      tags: [GameComponent]
+      responses:
+        '200':
+          description: Lesson help
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topic: { type: string }
+                  steps: { type: array, items: { type: string } }
+                  tips: { type: array, items: { type: string } }
+
+  /api/v1/questions:
+    get:
+      summary: List fraction questions
+      tags: [QuestionComponent]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: difficulty
+          in: query
+          schema:
+            $ref: '#/components/schemas/Difficulty'
+      responses:
+        '200':
+          description: A page of questions. answer keys are included only for admin callers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Question'
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+    post:
+      summary: Create a question (UseCaseDiagram Update Questions)
+      tags: [QuestionComponent]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionInput'
+      responses:
+        '201':
+          description: Question created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '400':
+          description: Validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/questions/search:
+    get:
+      summary: Free-text question search (Elasticsearch, NFR-1)
+      tags: [QuestionComponent]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: Matching questions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { type: object } }
+                  total: { type: integer }
+                  engine: { type: string }
+
+  /api/v1/questions/{questionId}:
+    get:
+      summary: Get a question prompt (SequenceDiagram1 "return prompt")
+      tags: [QuestionComponent]
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      responses:
+        '200':
+          description: Prompt and options, without the answer key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update a question (SequenceDiagram2 Admin "update()")
+      tags: [QuestionComponent]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionInput'
+      responses:
+        '200':
+          description: Updated question
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Deactivate a question
+      tags: [QuestionComponent]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      responses:
+        '200':
+          description: Question deactivated (soft delete, so history stays durable)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questionId: { type: string }
+                  active: { type: boolean }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/questions/{questionId}/check:
+    post:
+      summary: Check a submitted answer (SequenceDiagram1 "check answer")
+      tags: [QuestionComponent]
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer: { type: string }
+      responses:
+        '200':
+          description: Grading result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questionId: { type: string }
+                  correct: { type: boolean }
+                  reason:
+                    type: string
+                    enum: [exact_match, equivalent_fraction, mismatch, empty_answer]
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/durability:
+    get:
+      summary: ASR-1 durability posture (replication + recovery point)
+      tags: [QuestionComponent]
+      responses:
+        '200':
+          description: Persistence, replication and RPO/RTO status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  component: { type: string }
+                  requirement: { type: string }
+                  persistedQuestions: { type: integer }
+                  replication:
+                    type: object
+                    properties:
+                      standbys: { type: integer }
+                      healthy: { type: boolean }
+                  recoveryPoint:
+                    type: object
+                    properties:
+                      wal_lsn: { type: string }
+                      captured_at: { type: string, format: date-time }
+                  rpoTargetHours: { type: number }
+                  rtoTargetHours: { type: number }
+
+  /oauth/token:
+    post:
+      summary: OAuth2 token endpoint (section F)
+      description: >
+        Hosted by UserComponent. GameComponent additionally serves this same path
+        as a same-origin proxy (for the AdminClient screen served from /admin),
+        so a browser on the game origin can obtain a token without CORS setup.
+        Not part of the architecture spec; see README -> "Underspecified areas".
+      tags: [UserComponent]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [password, client_credentials, refresh_token]
+                username: { type: string }
+                password: { type: string, format: password }
+                client_id: { type: string }
+                client_secret: { type: string, format: password }
+                refresh_token: { type: string }
+                scope: { type: string }
+      responses:
+        '200':
+          description: Access token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Unsupported grant type or missing parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+
+  /api/v1/users:
+    post:
+      summary: Register a user
+      tags: [UserComponent]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, minLength: 3 }
+                password: { type: string, minLength: 8, format: password }
+                role:
+                  type: string
+                  enum: [student, teacher, admin]
+                  default: student
+                email: { type: string, format: email, nullable: true }
+                displayName: { type: string, nullable: true }
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '409':
+          description: Username already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: List users (admin only)
+      tags: [UserComponent]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Users page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users: { type: array, items: { $ref: '#/components/schemas/User' } }
+                  total: { type: integer }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/users/me:
+    get:
+      summary: Current authenticated user
+      tags: [UserComponent]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The calling user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/authorize:
+    get:
+      summary: Authorization decision for a requested scope
+      tags: [UserComponent]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Decision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorised: { type: boolean }
+                  reason: { type: string }
+                  roles: { type: array, items: { type: string } }
+                  scopes: { type: array, items: { type: string } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    GameId:
+      name: gameId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    QuestionId:
+      name: questionId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid OAuth2 bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthError'
+    Forbidden:
+      description: Token lacks the required scope or role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Difficulty:
+      type: string
+      enum: [easy, medium, hard]
+
+    GameState:
+      type: string
+      enum: [Playing, Paused, GameOver]
+      description: State machine from the StateDiagram
+
+    Question:
+      type: object
+      properties:
+        id: { type: string }
+        prompt: { type: string }
+        options:
+          type: array
+          items: { type: string }
+        correctOption:
+          type: string
+          description: Only present for admin callers
+        difficulty:
+          $ref: '#/components/schemas/Difficulty'
+        weight: { type: number }
+        tags: { type: array, items: { type: string } }
+
+    QuestionInput:
+      type: object
+      required: [prompt, options, correctOption]
+      properties:
+        prompt: { type: string, minLength: 3 }
+        options:
+          type: array
+          minItems: 2
+          items: { type: string }
+        correctOption: { type: string }
+        difficulty:
+          $ref: '#/components/schemas/Difficulty'
+        weight: { type: number, minimum: 0 }
+        tags: { type: array, items: { type: string } }
+
+    GameSession:
+      type: object
+      properties:
+        gameId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/GameState' }
+        score: { type: integer }
+        totalQuestions: { type: integer }
+        question:
+          $ref: '#/components/schemas/Question'
+
+    PromptView:
+      type: object
+      properties:
+        gameId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/GameState' }
+        score: { type: integer }
+        progress:
+          type: object
+          properties:
+            answered: { type: integer }
+            total: { type: integer }
+        question:
+          $ref: '#/components/schemas/Question'
+
+    AnswerResult:
+      type: object
+      properties:
+        gameId: { type: string, format: uuid }
+        correct: { type: boolean }
+        correctOption: { type: string }
+        awarded: { type: integer }
+        score: { type: integer }
+        state: { $ref: '#/components/schemas/GameState' }
+        progress:
+          type: object
+          properties:
+            answered: { type: integer }
+            total: { type: integer }
+        question:
+          $ref: '#/components/schemas/Question'
+        feedback:
+          $ref: '#/components/schemas/Feedback'
+
+    Feedback:
+      type: object
+      properties:
+        gameId: { type: string, format: uuid }
+        score: { type: integer }
+        state: { $ref: '#/components/schemas/GameState' }
+        answered: { type: integer }
+        totalQuestions: { type: integer }
+        correctAnswers: { type: integer }
+        accuracy: { type: number, minimum: 0, maximum: 1 }
+        completed: { type: boolean }
+        message: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        role:
+          type: string
+          enum: [student, teacher, admin]
+        email: { type: string, nullable: true }
+        displayName: { type: string, nullable: true }
+        active: { type: boolean }
+        scopes: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer }
+        refresh_token: { type: string }
+        scope: { type: string }
+        user:
+          $ref: '#/components/schemas/User'
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        error_description: { type: string }
+
+    OAuthError:
+      type: object
+      properties:
+        error:
+          type: string
+          enum: [unauthorized, invalid_token, insufficient_scope, insufficient_role, invalid_grant, invalid_client, unsupported_grant_type]
+        error_description: { type: string }
