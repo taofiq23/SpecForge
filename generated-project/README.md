@@ -9,6 +9,23 @@ SpecForge from `spec.json` (a parsed architecture document plus 11 PlantUML view
 - **Stack (spec §D recommended defaults):** Node.js 18, Express 4, PostgreSQL 14, Redis 6,
   RabbitMQ 3, Elasticsearch 7, OAuth2, Prometheus 2, Docker 20 (Jenkins 2 / Terraform 1 for CI and provisioning)
 
+## Screenshots
+
+Real screenshots of the real running app (Chromium via Playwright, against `node scripts/dev-server.js`
+— no Docker, no mocking of the screenshots themselves, only the external infra behind the API is faked).
+
+| Intro | Main menu |
+|---|---|
+| ![Intro scene: Space Fractions logo, rocket animation, Skip intro / Launch buttons](docs/screenshots/ui_intro.png) | ![Main menu: difficulty, question count, pilot name, Play Game, plus Help/Score/Admin links](docs/screenshots/ui_menu.png) |
+
+| Question | Mission report (ending) |
+|---|---|
+| ![Question scene: fraction prompt, three options, free-text answer box, HUD with score/state/timer](docs/screenshots/ui_question.png) | ![Ending scene: score, correct count, accuracy, GameOver state, per-question answer review table](docs/screenshots/ui_ending.png) |
+
+| Admin sign-in |
+|---|
+| ![AdminComponent sign-in screen: OAuth2 password grant form, username/password, or paste a token directly](docs/screenshots/ui_admin.png) |
+
 ---
 
 ## 1. What was generated
@@ -102,13 +119,30 @@ by the in-memory fakes in `tests/helpers/fakes.js`.
 
 ### Open and play the game in a browser
 
-The UI is served by GameComponent at the same origin as the API, and it works **with no Docker and
-no external infrastructure** (missing datastore dependencies degrade to the built-in fallbacks):
+Two ways to run it without Docker, verified directly (not assumed):
+
+**Recommended for a quick look or a demo — completely clean, no external connection attempts at all:**
+
+```bash
+npm install
+node scripts/dev-server.js     # http://127.0.0.1:4000 - the same component, wired to in-memory
+                                # fakes for Postgres/Redis/RabbitMQ/QuestionComponent (the same
+                                # fakes tests/ and smoke-ui.js use), so there is nothing to log
+                                # errors about and nothing to install beyond `npm install`.
+```
+
+**The real entry point, with real (not faked) infra clients:**
 
 ```bash
 npm install
 npm run start:game       # starts GameComponent, which also serves the UI  (or: npm start)
 ```
+
+This one genuinely works with no Docker running - the UI loads and the game is playable, confirmed
+directly - but the Redis client keeps retrying a real connection in the background and logs a
+`redis client error` line on every attempt (functionally harmless, visually noisy). For a real
+deployment, or for docker-compose, this is the correct entry point; for a clean local look at the
+UI, use `dev-server.js` above instead.
 
 Then open:
 

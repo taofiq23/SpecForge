@@ -20,6 +20,7 @@
     "start:user": "node services/user/src/server.js",
     "start:admin": "node services/admin/src/server.js",
     "smoke:ui": "node scripts/smoke-ui.js",
+    "dev": "node scripts/dev-server.js",
     "proto:gen": "grpc_tools_node_protoc --js_out=import_style=commonjs,binary:./generated --grpc_out=grpc_js:./generated -I . internal.proto"
   },
   "devDependencies": {
