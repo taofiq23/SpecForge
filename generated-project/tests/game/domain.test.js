@@ -105,6 +105,15 @@ describe('Game.submitAnswer (ActivityDiagram: calculate score)', () => {
     expect(game.score).toBe(0);
   });
 
+  test('a mathematically equivalent fraction is scored correct, matching Question.checkAnswer', () => {
+    // Real bug this guards against: submitAnswer used to do an exact string match only, so
+    // "6/8" was marked wrong for a correctOption of "3/4" even though they are the same value.
+    const game = new Game({ questions: [{ ...QUESTIONS[0], correctOption: '3/4' }] });
+    const result = game.submitAnswer({ questionId: 'q1', answer: '6/8' });
+    expect(result.correct).toBe(true);
+    expect(result.awarded).toBeGreaterThan(0);
+  });
+
   test('answers are compared after trimming whitespace', () => {
     const game = new Game({ questions: QUESTIONS });
     expect(game.submitAnswer({ questionId: 'q1', answer: '  3/4  ' }).correct).toBe(true);

@@ -37,6 +37,16 @@ SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv"}
 # code existed - a false positive baked into every score before this fix, not a hypothetical one.
 META_FILES = {"spec.json", "run_transcript.json", "run_stats.json", "conformance_report.json", "CONFORMANCE_REPORT.md", "install.log"}
 CLASS_DECL_TEMPLATE = r"\b(?:class|interface|struct|type)\s+{name}\b"
+# Real gap this closes: every deployment/container-diagram element (a UML `node` or `artifact` -
+# e.g. GameServer, GameContainer) was checked with CLASS_DECL_TEMPLATE alone, but a docker-compose
+# service or a k8s resource is never declared as "class GameServer" - it's infrastructure-as-code,
+# not a language class. That made every such element structurally unable to score "implemented"
+# regardless of how correct the real infrastructure was. This recognizes the same explicit,
+# human-authored traceability comment convention used in this project's own generated
+# docker-compose.yml / k8s manifests (see generated-project) as equally valid declaration evidence
+# for infra-kind elements - not a loosened bare-name match, since it still requires a deliberate,
+# labeled architecture-mapping comment, not just the name appearing incidentally somewhere.
+INFRA_DECL_TEMPLATE = r"#.*\bArchitecture (?:Node|Artifact)\s*:\s*{name}\b"
 BARE_NAME_TEMPLATE = r"\b{name}\b"
 
 
@@ -120,6 +130,8 @@ def _search_project(workspace: Workspace, pattern: str) -> List[Evidence]:
 
 def _check_element(workspace: Workspace, name: str, kind: str, methods: List[str]) -> ElementCheck:
     decl_hits = _search_project(workspace, CLASS_DECL_TEMPLATE.format(name=re.escape(name)))
+    if not decl_hits and kind == "component":
+        decl_hits = _search_project(workspace, INFRA_DECL_TEMPLATE.format(name=re.escape(name)))
     if decl_hits:
         found_methods, missing_methods = [], []
         decl_files = {h.file for h in decl_hits}

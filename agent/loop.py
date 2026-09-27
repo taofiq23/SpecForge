@@ -27,6 +27,17 @@ from .tools import ToolRegistry, ToolResult
 
 DEFAULT_MAX_TURNS = 60
 
+# Colors for terminal narration only - purely cosmetic, no effect on behavior. Safe to no-op:
+# an ANSI-blind terminal just shows the raw escape codes' bytes as invisible control characters.
+_ANSI_RESET = "\033[0m"
+_ANSI_TURN = "\033[1;36m"      # bold cyan - turn headers
+_ANSI_REASONING = "\033[97m"   # bright white - the model's own reasoning text
+_ANSI_READONLY = "\033[1;32m"  # bold green - read-only tool calls
+_ANSI_MUTATING = "\033[1;33m"  # bold yellow - mutating tool calls
+_ANSI_PREVIEW = "\033[2;37m"   # dim gray - tool result previews
+_ANSI_PLAN = "\033[1;35m"      # bold magenta - plan updates
+_ANSI_DONE = "\033[1;32m"      # bold green - completion / stop messages
+
 
 @dataclass
 class PlanTracker:
@@ -85,7 +96,9 @@ class AgentLoop:
         self.actions: List[Dict[str, Any]] = []  # [{"tool": ..., "mutating": bool, "is_error": bool}]
         self.stop_reason: Optional[str] = None  # "done" | "max_turns" | "interrupted"
 
-    def _log(self, message: str) -> None:
+    def _log(self, message: str, color: Optional[str] = None) -> None:
+        if color and self.verbose:
+            message = f"{color}{message}{_ANSI_RESET}"
         if not self.verbose:
             return
         try:
@@ -109,17 +122,17 @@ class AgentLoop:
 
         try:
             for turn in range(1, self.max_turns + 1):
-                self._log(f"\n--- turn {turn} " + "-" * 50)
+                self._log(f"\n--- turn {turn} " + "-" * 50, color=_ANSI_TURN)
                 response = self.llm.complete(self.system_prompt, messages, all_tools)
                 messages.append({"role": "assistant", "content": response.content})
                 for key in self.usage_totals:
                     self.usage_totals[key] += response.usage.get(key, 0)
 
                 if response.text:
-                    self._log(response.text)
+                    self._log(response.text, color=_ANSI_REASONING)
 
                 if not response.tool_calls:
-                    self._log("\n(model made no tool calls - considering the task complete)")
+                    self._log("\n(model made no tool calls - considering the task complete)", color=_ANSI_DONE)
                     self.stop_reason = "done"
                     return messages
 
@@ -128,24 +141,28 @@ class AgentLoop:
                     mutating = not read_only_by_name.get(call["name"], False)
                     if call["name"] == "update_plan":
                         result = self.plan.handle(call["input"])
-                        self._log("\nPlan:\n" + self.plan.render())
+                        self._log("\nPlan:\n" + self.plan.render(), color=_ANSI_PLAN)
                     else:
                         tag = "mutating" if mutating else "read-only"
-                        self._log(f"\n> [{tag}] {call['name']}({_short(call['input'])})")
+                        tag_color = _ANSI_MUTATING if mutating else _ANSI_READONLY
+                        self._log(f"\n> [{tag}] {call['name']}({_short(call['input'])})", color=tag_color)
                         result = self.tools.call(call["name"], call["input"])
                         preview = result.content if len(result.content) < 300 else result.content[:300] + "..."
-                        self._log(preview)
+                        self._log(preview, color=_ANSI_PREVIEW)
                     self.actions.append({"tool": call["name"], "mutating": mutating, "is_error": result.is_error})
                     tool_results.append(
                         {"type": "tool_result", "tool_use_id": call["id"], "content": result.content, "is_error": result.is_error}
                     )
                 messages.append({"role": "user", "content": tool_results})
 
-            self._log(f"\n(stopped after the {self.max_turns}-turn safety limit)")
+            self._log(f"\n(stopped after the {self.max_turns}-turn safety limit)", color=_ANSI_MUTATING)
             self.stop_reason = "max_turns"
             return messages
         except KeyboardInterrupt:
-            self._log("\n\n(interrupted - stopping after the current step; the project has whatever was written so far)")
+            self._log(
+                "\n\n(interrupted - stopping after the current step; the project has whatever was written so far)",
+                color=_ANSI_MUTATING,
+            )
             self.stop_reason = "interrupted"
             return messages
         finally:

@@ -106,6 +106,8 @@ services:
       - user
 
   game:
+    # Architecture Node: GameServer
+    # Architecture Artifact: GameContainer
     build:
       context: .
       dockerfile: Dockerfile
@@ -136,6 +138,8 @@ services:
         condition: service_healthy
 
   question:
+    # Architecture Node: QuestionServer
+    # Architecture Artifact: QuestionContainer
     build:
       context: .
       dockerfile: Dockerfile
@@ -167,6 +171,8 @@ services:
         condition: service_healthy
 
   user:
+    # Architecture Node: UserClient
+    # Architecture Artifact: UserContainer
     build:
       context: .
       dockerfile: Dockerfile
@@ -198,6 +204,35 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # Optional standalone AdminComponent (services/admin/src/server.js). Not part of the default
+  # `docker compose up` - by default Admin runs embedded inside `game` (see that service's
+  # comment / the GameComponent -- AdminComponent edge in the ComponentDiagram). This exists so
+  # the documented "can also be deployed as its own process if it needs to scale independently"
+  # path in server.js is actually reachable, not just described in a code comment.
+  # Usage: docker compose --profile admin-standalone up -d
+  admin:
+    # Architecture Node: AdminClient
+    # Architecture Artifact: AdminContainer
+    profiles: ["admin-standalone"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMPONENT: admin
+    image: spacefractions-admin:latest
+    container_name: spacefractions-admin
+    environment:
+      NODE_ENV: production
+      ADMIN_PORT: "8084"
+      QUESTION_BASE_URL: http://question:8082
+      OAUTH2_ISSUER: http://user:8083
+      OAUTH2_AUDIENCE: spacefractions-api
+      OAUTH2_SECRET: spacefractions-dev-secret-change-me
+    ports:
+      - "8084:8084"
+    depends_on:
+      - question
 
 volumes:
   postgres-data:

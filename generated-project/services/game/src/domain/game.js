@@ -1,6 +1,21 @@
 'use strict';
 
-const { GAME_STATES, ALL_GAME_STATES, newId } = require('@spacefractions/shared').domain;
+const { GAME_STATES, ALL_GAME_STATES, newId, fractionEquals } = require('@spacefractions/shared').domain;
+
+/**
+ * Same equivalence rule as Question.checkAnswer (services/question/src/domain/question.js) -
+ * real bug fixed here: submitAnswer previously did an exact string match only, so a
+ * mathematically correct but differently-formatted fraction (e.g. "6/8" for "3/4") was scored
+ * wrong even though Question.checkAnswer explicitly exists to prevent exactly that unfairness.
+ * Duplicated rather than imported to avoid a cross-service dependency from game -> question's
+ * domain module; kept in lockstep intentionally, matching how Question defines it.
+ */
+function answersMatch(submitted, correctOption) {
+  const a = String(submitted).trim();
+  const b = String(correctOption).trim();
+  if (a === b) return true;
+  return a.includes('/') && b.includes('/') && fractionEquals(a, b);
+}
 
 /**
  * Game - the class named in the ClassDiagram (spec.json view 2):
@@ -151,7 +166,7 @@ class Game {
     }
 
     const question = this.questions[index];
-    const correct = String(answer).trim() === String(question.correctOption).trim();
+    const correct = answersMatch(answer, question.correctOption);
     const weight = Number.isFinite(question.weight) ? question.weight : 1;
     const awarded = correct ? 10 * weight : 0;
 

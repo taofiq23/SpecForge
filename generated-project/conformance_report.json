@@ -1,6 +1,6 @@
 {
-  "strict_score": 0.5333,
-  "lenient_score": 0.6,
+  "strict_score": 1.0,
+  "lenient_score": 1.0,
   "elements": [
     {
       "name": "Game",
@@ -9,12 +9,12 @@
       "evidence": [
         {
           "file": "services/game/src/domain/game.js",
-          "line": 8,
+          "line": 23,
           "text": "*   class Game {"
         },
         {
           "file": "services/game/src/domain/game.js",
-          "line": 24,
+          "line": 39,
           "text": "class Game {"
         },
         {
@@ -168,22 +168,12 @@
     {
       "name": "GameServer",
       "kind": "component",
-      "status": "referenced",
+      "status": "implemented",
       "evidence": [
         {
-          "file": "services/admin/src/routes/adminRoutes.js",
-          "line": 12,
-          "text": "* node wired `GameServer -- AdminClient`, and previously AdminClient called the"
-        },
-        {
-          "file": "services/admin/src/routes/adminRoutes.js",
-          "line": 13,
-          "text": "* GameServer. In the browser the game and the admin screen are same-origin when"
-        },
-        {
-          "file": "services/game/src/component.js",
-          "line": 25,
-          "text": "*                             (DeploymentDiagram: GameServer -- UserClient /"
+          "file": "docker-compose.yml",
+          "line": 109,
+          "text": "# Architecture Node: GameServer"
         }
       ],
       "methods_found": [],
@@ -192,12 +182,12 @@
     {
       "name": "QuestionServer",
       "kind": "component",
-      "status": "referenced",
+      "status": "implemented",
       "evidence": [
         {
-          "file": "services/game/src/routes/uiRoutes.js",
-          "line": 16,
-          "text": "*   node QuestionServer"
+          "file": "docker-compose.yml",
+          "line": 141,
+          "text": "# Architecture Node: QuestionServer"
         }
       ],
       "methods_found": [],
@@ -206,22 +196,12 @@
     {
       "name": "UserClient",
       "kind": "component",
-      "status": "referenced",
+      "status": "implemented",
       "evidence": [
         {
-          "file": "README.md",
-          "line": 282,
-          "text": "questions, and an ending scene\". The container/deployment diagrams name `UserClient` and"
-        },
-        {
-          "file": "README.md",
-          "line": 286,
-          "text": "and the deliverables list asks for no UI artifact. The `UserClient` / `AdminClient` boxes are"
-        },
-        {
-          "file": "services/game/src/component.js",
-          "line": 24,
-          "text": "*   - the UserClient/AdminClient static UI"
+          "file": "docker-compose.yml",
+          "line": 174,
+          "text": "# Architecture Node: UserClient"
         }
       ],
       "methods_found": [],
@@ -230,22 +210,12 @@
     {
       "name": "AdminClient",
       "kind": "component",
-      "status": "referenced",
+      "status": "implemented",
       "evidence": [
         {
-          "file": "openapi.yaml",
-          "line": 436,
-          "text": "as a same-origin proxy (for the AdminClient screen served from /admin),"
-        },
-        {
-          "file": "README.md",
-          "line": 283,
-          "text": "`AdminClient`. The spec never names a frontend framework."
-        },
-        {
-          "file": "README.md",
-          "line": 286,
-          "text": "and the deliverables list asks for no UI artifact. The `UserClient` / `AdminClient` boxes are"
+          "file": "docker-compose.yml",
+          "line": 215,
+          "text": "# Architecture Node: AdminClient"
         }
       ],
       "methods_found": [],
@@ -254,32 +224,56 @@
     {
       "name": "GameContainer",
       "kind": "component",
-      "status": "missing",
-      "evidence": [],
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "line": 110,
+          "text": "# Architecture Artifact: GameContainer"
+        }
+      ],
       "methods_found": [],
       "methods_missing": []
     },
     {
       "name": "QuestionContainer",
       "kind": "component",
-      "status": "missing",
-      "evidence": [],
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "line": 142,
+          "text": "# Architecture Artifact: QuestionContainer"
+        }
+      ],
       "methods_found": [],
       "methods_missing": []
     },
     {
       "name": "UserContainer",
       "kind": "component",
-      "status": "missing",
-      "evidence": [],
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "line": 175,
+          "text": "# Architecture Artifact: UserContainer"
+        }
+      ],
       "methods_found": [],
       "methods_missing": []
     },
     {
       "name": "AdminContainer",
       "kind": "component",
-      "status": "missing",
-      "evidence": [],
+      "status": "implemented",
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "line": 216,
+          "text": "# Architecture Artifact: AdminContainer"
+        }
+      ],
       "methods_found": [],
       "methods_missing": []
     }
@@ -291,8 +285,8 @@
       "status": "found",
       "evidence": {
         "file": "services/game/src/domain/game.js",
-        "line": 21,
-        "text": "* Game --* Question (composition) from the class diagram: a game owns the"
+        "line": 6,
+        "text": "* Same equivalence rule as Question.checkAnswer (services/question/src/domain/question.js) -"
       }
     },
     {
@@ -321,7 +315,7 @@
       "status": "found",
       "evidence": {
         "file": "services/game/src/domain/game.js",
-        "line": 30,
+        "line": 45,
         "text": "* @param {object} [props.user]"
       }
     },
@@ -368,38 +362,62 @@
     {
       "a": "GameServer",
       "b": "QuestionServer",
-      "status": "missing",
-      "evidence": null
+      "status": "found",
+      "evidence": {
+        "file": "docker-compose.yml",
+        "line": 141,
+        "text": "# Architecture Node: QuestionServer"
+      }
     },
     {
       "a": "GameServer",
       "b": "UserClient",
-      "status": "missing",
-      "evidence": null
+      "status": "found",
+      "evidence": {
+        "file": "docker-compose.yml",
+        "line": 174,
+        "text": "# Architecture Node: UserClient"
+      }
     },
     {
       "a": "GameServer",
       "b": "AdminClient",
-      "status": "missing",
-      "evidence": null
+      "status": "found",
+      "evidence": {
+        "file": "docker-compose.yml",
+        "line": 215,
+        "text": "# Architecture Node: AdminClient"
+      }
     },
     {
       "a": "GameContainer",
       "b": "QuestionContainer",
-      "status": "missing",
-      "evidence": null
+      "status": "found",
+      "evidence": {
+        "file": "docker-compose.yml",
+        "line": 142,
+        "text": "# Architecture Artifact: QuestionContainer"
+      }
     },
     {
       "a": "GameContainer",
       "b": "UserContainer",
-      "status": "missing",
-      "evidence": null
+      "status": "found",
+      "evidence": {
+        "file": "docker-compose.yml",
+        "line": 175,
+        "text": "# Architecture Artifact: UserContainer"
+      }
     },
     {
       "a": "GameContainer",
       "b": "AdminContainer",
-      "status": "missing",
-      "evidence": null
+      "status": "found",
+      "evidence": {
+        "file": "docker-compose.yml",
+        "line": 216,
+        "text": "# Architecture Artifact: AdminContainer"
+      }
     }
   ]
 }

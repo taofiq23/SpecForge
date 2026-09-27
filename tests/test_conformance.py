@@ -84,6 +84,39 @@ def test_bare_name_without_a_class_declaration_is_referenced_not_implemented(tmp
     assert game.status != "implemented"
 
 
+def test_infra_element_with_labeled_architecture_comment_counts_as_implemented(tmp_path):
+    # Real gap this closes: a deployment/container-diagram element (kind="component" here, same
+    # as GameComponent) is infrastructure, not a language class - "class GameComponent" style
+    # matching can never find it in a docker-compose.yml or k8s manifest. A deliberate, labeled
+    # "# Architecture Node: <name>" comment is the honest equivalent of a declaration for these.
+    ws = Workspace(tmp_path / "proj")
+    (ws.root / "docker-compose.yml").write_text(
+        "services:\n"
+        "  game:\n"
+        "    # Architecture Node: GameComponent\n"
+        "    image: game:latest\n"
+    )
+    (ws.root / "game.py").write_text("class Game:\n    def play(self): pass\n    def viewScore(self): pass\n")
+
+    report = check_conformance(_diagram(), ws)
+
+    game_component = next(e for e in report.elements if e.name == "GameComponent")
+    assert game_component.status == "implemented"
+
+
+def test_infra_element_without_the_labeled_comment_stays_referenced(tmp_path):
+    # The name alone (no labeled comment) must not be enough - otherwise this would just be a
+    # second bare-name match, defeating the point of requiring a deliberate declaration.
+    ws = Workspace(tmp_path / "proj")
+    (ws.root / "docker-compose.yml").write_text("services:\n  game:\n    # GameComponent runs here\n")
+    (ws.root / "game.py").write_text("class Game:\n    def play(self): pass\n    def viewScore(self): pass\n")
+
+    report = check_conformance(_diagram(), ws)
+
+    game_component = next(e for e in report.elements if e.name == "GameComponent")
+    assert game_component.status == "referenced"
+
+
 def test_strict_score_is_never_inflated_by_referenced_only_matches(tmp_path):
     ws = Workspace(tmp_path / "proj")
     (ws.root / "notes.py").write_text("# mentions Game, Question, Admin, GameComponent, QuestionComponent in a comment\n")

@@ -31,6 +31,14 @@ Work like this:
      if it is a thin wrapper around a "Game" class) - not just implied by it. A correct
      implementation that never creates anything findable under the traceability matrix's own
      names will look unverified even though the underlying logic is right.
+  2b. Deployment-diagram and container-diagram elements (a UML `node` or `artifact`, e.g.
+     "GameServer", "GameContainer") are infrastructure, not code - they will never be a real
+     class/module, and forcing one into existence just to be findable would be worse than not
+     having it. Instead, label the real infrastructure that corresponds to each one with a comment
+     in the actual Dockerfile / docker-compose.yml / k8s manifest, in the exact form
+     `# Architecture Node: <name>` or `# Architecture Artifact: <name>` - this is the specific
+     convention the conformance checker looks for, so an unlabeled but otherwise-correct
+     deployment setup will still be reported as unverified.
   3. Write files with write_file; use edit_file for one targeted change to a file you already
      wrote, or multi_edit for several changes to the same file in one call (never call edit_file
      more than once for the same file in a single turn - see its own description for why). Use
