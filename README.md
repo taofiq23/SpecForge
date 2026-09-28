@@ -29,7 +29,7 @@ Run once, end to end, against a real input (`spec/Architecture_Documentation.md`
 
 | | |
 |---|---|
-| **Generated** | 3 microservices (Game/Question/User) + Admin, shared infra (Postgres, Redis, RabbitMQ, Elasticsearch, OAuth2, Prometheus), Docker + docker-compose + k8s, all 6 spec deliverables, a real frontend |
+| **Generated** | 3 microservices (Game/Question/User) + Admin, shared infra (Postgres, Redis, RabbitMQ, Elasticsearch, OAuth2, Prometheus), Docker + docker-compose + k8s, all 6 spec deliverables, a real frontend — runnable as a native desktop app (Electron) or in a browser |
 | **Tests** | **206/206 passing**, 7 suites, zero external infrastructure required |
 | **UI verification** | **15/15** real-HTTP smoke checks (boots the actual server, walks the actual game: intro → menu → question → grading → score) |
 | **Architecture conformance** | **100% strict / 100% lenient** — every "implemented" backed by a real `file:line`, not a self-report |
@@ -133,7 +133,7 @@ python -m agent.cli \
   --out generated-project \
   --provider deepseek
 
-cd generated-project && npm install && npm test && npm run dev   # http://127.0.0.1:4000
+cd generated-project && npm install && npm test && npm run desktop   # opens as a native window
 ```
 
 ## Real bugs this project's own testing caught

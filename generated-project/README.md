@@ -109,13 +109,22 @@ origin without a rebuild.
 
 ```bash
 npm install
-npm test                 # 206 tests, 7 suites
+npm test                 # 207 tests, 7 suites
 npm run test:coverage
 npm run smoke:ui         # 15/15 UI checks over real HTTP (node scripts/smoke-ui.js)
 ```
 
 Every PostgreSQL / Redis / RabbitMQ / Elasticsearch / QuestionComponent dependency is replaced
 by the in-memory fakes in `tests/helpers/fakes.js`.
+
+### Run it as a desktop app
+
+```bash
+npm install
+npm run desktop           # opens a real native window titled "Space Fractions" -
+                           # the same dev-server.js boot path below, inside Electron
+                           # instead of a browser tab
+```
 
 ### Open and play the game in a browser
 
