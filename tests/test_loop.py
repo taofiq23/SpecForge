@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
 from agent.llm import LLMAdapter, LLMResponse, ToolSpec
-from agent.loop import AgentLoop
+from agent.loop import AgentLoop, COMPACTION_KEEP_RECENT_TURNS
 from agent.tools import Workspace, make_tools
 
 
@@ -14,7 +14,7 @@ class ScriptedLLM(LLMAdapter):
         self._responses = list(responses)
         self.calls: List[Dict[str, Any]] = []  # records (system, messages, tools) for each call, for assertions
 
-    def complete(self, system: str, messages, tools: List[ToolSpec]) -> LLMResponse:
+    def complete(self, system: str, messages, tools: List[ToolSpec], on_text_delta=None) -> LLMResponse:
         self.calls.append({"system": system, "messages": [dict(m) for m in messages], "tools": [t.name for t in tools]})
         return self._responses.pop(0)
 
@@ -98,6 +98,76 @@ def test_loop_honors_the_max_turns_safety_cap(tmp_path):
     assert agent.stop_reason == "max_turns"
 
 
+def test_context_compaction_shrinks_old_tool_results_but_keeps_recent_ones_full(tmp_path):
+    # Real gap this closes (see README limitations): a long run's tool results pile up in
+    # `messages` forever. Once cumulative usage crosses the threshold, older ones (outside the
+    # most recent COMPACTION_KEEP_RECENT_TURNS turns) should shrink; recent ones must stay intact
+    # so the model still has full detail on what it was just doing.
+    workspace = Workspace(tmp_path / "proj")
+    tools = make_tools(workspace)
+    big_content = "x" * 500
+    (workspace.root / "big.txt").write_text(big_content)
+
+    # 9 read_file turns (large tool_result each), then a final plain-text close.
+    responses = [
+        LLMResponse(
+            content=[_tool_use(str(i), "read_file", {"path": "big.txt"})],
+            stop_reason="tool_use",
+            usage={"input_tokens": 1, "output_tokens": 1},
+        )
+        for i in range(9)
+    ]
+    responses.append(LLMResponse(content=[_text("done")], stop_reason="end_turn"))
+    llm = ScriptedLLM(responses)
+    agent = AgentLoop(llm=llm, tools=tools, system_prompt="sys", verbose=False, compaction_threshold_tokens=1)
+
+    messages = agent.run("build it")
+
+    tool_result_contents = [
+        block["content"]
+        for msg in messages
+        if msg.get("role") == "user" and isinstance(msg.get("content"), list)
+        for block in msg["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    assert len(tool_result_contents) == 9
+
+    truncated = [c for c in tool_result_contents if "truncated by context compaction" in c]
+    full = [c for c in tool_result_contents if big_content in c]
+    assert truncated, "at least the oldest tool results should have been compacted"
+    assert full, "the most recent turns must stay fully intact"
+    assert len(full) <= COMPACTION_KEEP_RECENT_TURNS
+    assert agent.stats()["compactions"] >= 1
+
+
+def test_context_compaction_does_nothing_below_the_threshold(tmp_path):
+    workspace = Workspace(tmp_path / "proj")
+    tools = make_tools(workspace)
+    big_content = "y" * 500
+    (workspace.root / "big.txt").write_text(big_content)
+
+    responses = [
+        LLMResponse(content=[_tool_use(str(i), "read_file", {"path": "big.txt"})], stop_reason="tool_use", usage={"input_tokens": 1})
+        for i in range(9)
+    ]
+    responses.append(LLMResponse(content=[_text("done")], stop_reason="end_turn"))
+    llm = ScriptedLLM(responses)
+    # Default threshold (150k tokens) is nowhere near reached by this run's tiny usage.
+    agent = AgentLoop(llm=llm, tools=tools, system_prompt="sys", verbose=False)
+
+    messages = agent.run("build it")
+
+    tool_result_contents = [
+        block["content"]
+        for msg in messages
+        if msg.get("role") == "user" and isinstance(msg.get("content"), list)
+        for block in msg["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    assert all(big_content in c for c in tool_result_contents)
+    assert agent.stats()["compactions"] == 0
+
+
 def test_stats_track_usage_and_tag_actions_mutating_vs_read_only(tmp_path):
     workspace = Workspace(tmp_path / "proj")
     tools = make_tools(workspace)
@@ -130,7 +200,7 @@ def test_a_keyboard_interrupt_mid_run_stops_gracefully_and_keeps_partial_progres
     tools = make_tools(workspace)
 
     class InterruptingLLM(LLMAdapter):
-        def complete(self, system, messages, tools):
+        def complete(self, system, messages, tools, on_text_delta=None):
             if len(messages) == 1:
                 return LLMResponse(content=[_tool_use("1", "write_file", {"path": "a.txt", "content": "saved before interrupt"})], stop_reason="tool_use")
             raise KeyboardInterrupt

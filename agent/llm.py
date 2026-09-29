@@ -156,8 +156,21 @@ class LLMAdapter(ABC):
     """Implement this once per model provider. The agent loop only ever calls `complete()`."""
 
     @abstractmethod
-    def complete(self, system: str, messages: List[Dict[str, Any]], tools: List[ToolSpec]) -> LLMResponse:
-        """One round-trip: system prompt + conversation-so-far + available tools -> one model turn."""
+    def complete(
+        self,
+        system: str,
+        messages: List[Dict[str, Any]],
+        tools: List[ToolSpec],
+        on_text_delta: Optional[Callable[[str], None]] = None,
+    ) -> LLMResponse:
+        """One round-trip: system prompt + conversation-so-far + available tools -> one model turn.
+
+        `on_text_delta`, when given, is called with each chunk of the model's text *as it's
+        generated* - the loop uses this to narrate live instead of printing the whole reply only
+        after the full round-trip finishes. It's optional and purely additive: the returned
+        `LLMResponse` is identical either way, assembled from the provider's own final/complete
+        result, not reconstructed by hand from the streamed pieces - real per-provider streaming,
+        not a fake progress bar over a blocking call."""
 
 
 class AnthropicAdapter(LLMAdapter):
@@ -177,16 +190,31 @@ class AnthropicAdapter(LLMAdapter):
         self._model = model
         self._max_tokens = max_tokens
 
-    def complete(self, system: str, messages: List[Dict[str, Any]], tools: List[ToolSpec]) -> LLMResponse:
-        response = with_retry(
-            lambda: self._client.messages.create(
+    def complete(
+        self,
+        system: str,
+        messages: List[Dict[str, Any]],
+        tools: List[ToolSpec],
+        on_text_delta: Optional[Callable[[str], None]] = None,
+    ) -> LLMResponse:
+        def _call():
+            with self._client.messages.stream(
                 model=self._model,
                 max_tokens=self._max_tokens,
                 system=system,
                 messages=messages,
                 tools=[t.to_anthropic() for t in tools] if tools else [],
-            )
-        )
+            ) as stream:
+                # text_stream yields only text deltas (tool_use argument JSON deltas are not text),
+                # which is exactly what narration wants; get_final_message() then gives back the
+                # same fully-assembled response messages.create() would have, so nothing below this
+                # needs to know streaming happened at all.
+                for text in stream.text_stream:
+                    if on_text_delta:
+                        on_text_delta(text)
+                return stream.get_final_message()
+
+        response = with_retry(_call)
         content = []
         for block in response.content:
             if block.type == "text":
@@ -249,23 +277,60 @@ class OpenAICompatibleAdapter(LLMAdapter):
                     out.append({"role": "tool", "tool_call_id": r["tool_use_id"], "content": str(r["content"])})
         return out
 
-    def complete(self, system: str, messages: List[Dict[str, Any]], tools: List[ToolSpec]) -> LLMResponse:
+    def complete(
+        self,
+        system: str,
+        messages: List[Dict[str, Any]],
+        tools: List[ToolSpec],
+        on_text_delta: Optional[Callable[[str], None]] = None,
+    ) -> LLMResponse:
         openai_messages = [{"role": "system", "content": system}] + self._to_openai_messages(messages)
-        response = with_retry(
-            lambda: self._client.chat.completions.create(
+
+        def _call():
+            # Unlike Anthropic's SDK, there's no get_final_message()-style helper here - tool call
+            # arguments arrive as JSON string fragments keyed by index across many chunks, so they
+            # have to be accumulated by hand before parsing. stream_options.include_usage is needed
+            # explicitly, or usage comes back empty in streaming mode (a real gap: without it,
+            # usage_totals - and therefore context compaction, which reads it - would silently stop
+            # working the moment streaming is used).
+            stream = self._client.chat.completions.create(
                 model=self._model,
                 messages=openai_messages,
                 tools=[t.to_openai() for t in tools] if tools else None,
+                stream=True,
+                stream_options={"include_usage": True},
             )
-        )
-        choice = response.choices[0]
+            text_parts: List[str] = []
+            tool_calls_by_index: Dict[int, Dict[str, Any]] = {}
+            usage: Dict[str, int] = {}
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage = {"input_tokens": chunk.usage.prompt_tokens, "output_tokens": chunk.usage.completion_tokens}
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    text_parts.append(delta.content)
+                    if on_text_delta:
+                        on_text_delta(delta.content)
+                for tc_delta in delta.tool_calls or []:
+                    entry = tool_calls_by_index.setdefault(tc_delta.index, {"id": None, "name": None, "arguments": ""})
+                    if tc_delta.id:
+                        entry["id"] = tc_delta.id
+                    if tc_delta.function and tc_delta.function.name:
+                        entry["name"] = tc_delta.function.name
+                    if tc_delta.function and tc_delta.function.arguments:
+                        entry["arguments"] += tc_delta.function.arguments
+            return "".join(text_parts), tool_calls_by_index, usage
+
+        text, tool_calls_by_index, usage = with_retry(_call)
         content: List[Dict[str, Any]] = []
-        if choice.message.content:
-            content.append({"type": "text", "text": choice.message.content})
-        for tc in choice.message.tool_calls or []:
-            content.append({"type": "tool_use", "id": tc.id, "name": tc.function.name, "input": _json_loads(tc.function.arguments)})
-        stop_reason = "tool_use" if choice.message.tool_calls else "end_turn"
-        usage = {"input_tokens": response.usage.prompt_tokens, "output_tokens": response.usage.completion_tokens} if response.usage else {}
+        if text:
+            content.append({"type": "text", "text": text})
+        for index in sorted(tool_calls_by_index):
+            tc = tool_calls_by_index[index]
+            content.append({"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": _json_loads(tc["arguments"])})
+        stop_reason = "tool_use" if tool_calls_by_index else "end_turn"
         return LLMResponse(content=content, stop_reason=stop_reason, usage=usage)
 
 

@@ -56,6 +56,7 @@ async function createWindow() {
     title: 'Space Fractions',
     autoHideMenuBar: true,
     backgroundColor: '#05060f',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
   });
 
   await waitForServer();

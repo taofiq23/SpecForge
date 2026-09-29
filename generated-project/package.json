@@ -23,11 +23,34 @@
     "smoke:ui": "node scripts/smoke-ui.js",
     "dev": "node scripts/dev-server.js",
     "desktop": "electron .",
+    "desktop:build": "electron-builder --win dir",
     "proto:gen": "grpc_tools_node_protoc --js_out=import_style=commonjs,binary:./generated --grpc_out=grpc_js:./generated -I . internal.proto"
   },
   "devDependencies": {
     "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "jest": "^29.7.0"
+  },
+  "build": {
+    "appId": "com.spacefractions.desktop",
+    "productName": "Space Fractions",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "electron/**/*",
+      "scripts/dev-server.js",
+      "services/**/*",
+      "shared/**/*",
+      "tests/helpers/**/*",
+      "web/**/*",
+      "package.json",
+      "!**/*.test.js"
+    ],
+    "win": {
+      "icon": "electron/assets/icon.ico",
+      "target": "dir"
+    }
   },
   "engines": {
     "node": ">=18"

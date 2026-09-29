@@ -2,7 +2,7 @@
 
 **A code-generation agent that checks its own work against the UML that specified it — instead of generating code and hoping.**
 
-![tests](https://img.shields.io/badge/agent%20tests-94%20passing-2ea44f) ![generated](https://img.shields.io/badge/generated%20project%20tests-207%20passing-2ea44f) ![smoke](https://img.shields.io/badge/UI%20smoke%20checks-15%2F15-2ea44f) ![license](https://img.shields.io/badge/license-MIT-blue)
+![tests](https://img.shields.io/badge/agent%20tests-102%20passing-2ea44f) ![generated](https://img.shields.io/badge/generated%20project%20tests-207%20passing-2ea44f) ![smoke](https://img.shields.io/badge/UI%20smoke%20checks-15%2F15-2ea44f) ![license](https://img.shields.io/badge/license-MIT-blue)
 
 ---
 
@@ -124,7 +124,7 @@ Every adoption above was **verified directly against this machine's real behavio
 
 ```bash
 pip install -r requirements.txt
-python -m pytest                    # 94 tests, no API key needed
+python -m pytest                    # 102 tests, no API key needed
 
 export DEEPSEEK_API_KEY=...         # or ANTHROPIC_API_KEY, or OPENAI_API_KEY
 python -m agent.cli \
@@ -160,7 +160,7 @@ SpecForge/
 │   ├── conformance.py       — the independent architecture-conformance checker
 │   ├── prompts.py            — the system prompt
 │   └── cli.py                 — entry point
-├── tests/                — 94 tests
+├── tests/                — 102 tests
 ├── spec/                  — the input: Architecture_Documentation.md, Architecture_View.md
 ├── generated-project/     — what the agent built, run against the real spec above
 └── logs/                  — all 4 real runs, unedited (including the crash and the fix)
@@ -171,7 +171,8 @@ SpecForge/
 - The conformance checker is heuristic string/regex matching over the generated project, not a real per-language parser or import-graph analysis — it can be fooled by coincidental name matches, and a "found" relationship means one name appears in a file that implements the other, not a proven dependency. This is deliberately the first version; a language-aware static-analysis pass (parsing real ASTs) is the natural next extension, not a rewrite.
 - Deployment/container-diagram elements (`GameServer`, `GameContainer`, ...) are only recognized as `implemented` when the infrastructure file carries an explicit `# Architecture Node/Artifact: <name>` comment — it does not (and deliberately does not try to) infer that `GameServer` means "the `game` service" on its own from naming similarity alone, since that kind of fuzzy matching is exactly the loose string-matching this checker is designed to avoid. A generated project that never adds this labeling will still score those elements as `referenced`/`missing`, correctly.
 - `fetch_url`'s SSRF guard is a hostname-resolution check (blocks private/loopback/link-local ranges); it does not defend against DNS-rebinding attacks that change the resolved address between the check and the actual request.
-- The agent has no context-compaction or streaming output yet — deliberately deferred until a real run's turn count or UX actually needs it, rather than built speculatively.
+- Context compaction (`agent/loop.py`) is deterministic truncation of older tool results once cumulative usage crosses a threshold, not LLM-based summarization — simpler, free, and fully testable, at the cost of not preserving a human-readable summary of what was truncated (the model already acted on that turn, so it doesn't need the detail back, but a person reading the transcript later loses it).
+- Streaming (`agent/llm.py`) narrates the model's own reasoning text live, chunk by chunk, for both Anthropic and any OpenAI-compatible provider (verified live against the real DeepSeek API, not just mocked) — but the returned `LLMResponse` is always assembled from the provider's own complete/final result, never reconstructed from the streamed pieces by hand, so nothing downstream needed to change to support it.
 
 ## License
 

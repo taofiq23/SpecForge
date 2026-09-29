@@ -26,6 +26,15 @@ from .llm import LLMAdapter, ToolSpec
 from .tools import ToolRegistry, ToolResult
 
 DEFAULT_MAX_TURNS = 60
+# Real gap this closes (see README limitations): a long run's tool results - especially repeated
+# read_file calls against a growing generated project - accumulate in `messages` forever, eventually
+# approaching the model's context window. 150k input tokens leaves real headroom under every
+# provider this project targets (all >= 128k) before that becomes a problem.
+DEFAULT_COMPACTION_TOKEN_THRESHOLD = 150_000
+# How many of the most recent turn-pairs are left completely untouched by compaction, so the model
+# always has full, uncompacted detail on what it was just doing.
+COMPACTION_KEEP_RECENT_TURNS = 6
+COMPACTION_TRUNCATE_TO_CHARS = 200
 
 # Colors for terminal narration only - purely cosmetic, no effect on behavior. Safe to no-op:
 # an ANSI-blind terminal just shows the raw escape codes' bytes as invisible control characters.
@@ -78,12 +87,22 @@ class PlanTracker:
 
 
 class AgentLoop:
-    def __init__(self, llm: LLMAdapter, tools: ToolRegistry, system_prompt: str, max_turns: int = DEFAULT_MAX_TURNS, verbose: bool = True):
+    def __init__(
+        self,
+        llm: LLMAdapter,
+        tools: ToolRegistry,
+        system_prompt: str,
+        max_turns: int = DEFAULT_MAX_TURNS,
+        verbose: bool = True,
+        compaction_threshold_tokens: Optional[int] = DEFAULT_COMPACTION_TOKEN_THRESHOLD,
+    ):
         self.llm = llm
         self.tools = tools
         self.system_prompt = system_prompt
         self.max_turns = max_turns
         self.verbose = verbose
+        self.compaction_threshold_tokens = compaction_threshold_tokens
+        self.compactions = 0
         self.plan = PlanTracker()
         # Telemetry (item #15/#8 from the gap review): a run leaves an auditable record instead of
         # just scrolling past in the terminal - total tokens spent, and every action taken, tagged
@@ -104,15 +123,65 @@ class AgentLoop:
         try:
             print(message, file=sys.stdout, flush=True)
         except UnicodeEncodeError:
-            # A real crash this hit at turn 90 of the actual run: stdout redirected to a file on
-            # Windows defaults to the legacy console codepage (cp1252 here), which can't represent
-            # every character a tool result might contain - non-English file content, npm's own
-            # progress-bar output, etc. cli.py now asks for a UTF-8 stdout up front, which should
-            # prevent this outright; this is the defense-in-depth fallback for when it's used some
-            # other way. Narrating what the agent did must never be able to crash the run itself.
-            encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
-            safe = message.encode(encoding, errors="replace").decode(encoding, errors="replace")
-            print(safe, file=sys.stdout, flush=True)
+            self._log_unicode_fallback(message)
+
+    def _log_inline(self, chunk: str, color: Optional[str] = None) -> None:
+        """Like _log, but no trailing newline - for printing streamed text deltas as they arrive
+        so they read as one flowing paragraph instead of one line per chunk."""
+        if not self.verbose or not chunk:
+            return
+        text = f"{color}{chunk}{_ANSI_RESET}" if color else chunk
+        try:
+            print(text, end="", file=sys.stdout, flush=True)
+        except UnicodeEncodeError:
+            self._log_unicode_fallback(text, end="")
+
+    def _log_unicode_fallback(self, message: str, end: str = "\n") -> None:
+        # A real crash this hit at turn 90 of the actual run: stdout redirected to a file on
+        # Windows defaults to the legacy console codepage (cp1252 here), which can't represent
+        # every character a tool result might contain - non-English file content, npm's own
+        # progress-bar output, etc. cli.py now asks for a UTF-8 stdout up front, which should
+        # prevent this outright; this is the defense-in-depth fallback for when it's used some
+        # other way. Narrating what the agent did must never be able to crash the run itself.
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        safe = message.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        print(safe, end=end, file=sys.stdout, flush=True)
+
+    def _compact_if_needed(self, messages: List[Dict[str, Any]]) -> None:
+        """Shrinks older tool_result content in place once cumulative usage crosses the
+        threshold, keeping the most recent COMPACTION_KEEP_RECENT_TURNS turns fully intact. This
+        is deliberately deterministic truncation, not an extra LLM call to summarize history: it's
+        simpler, has no extra cost or latency, and is fully testable without mocking a second kind
+        of model response. The turns most likely to be large (a `read_file` on a big generated
+        file, a long `grep_search` result) are exactly the ones safe to shrink once the model has
+        already acted on them and moved on."""
+        if self.compaction_threshold_tokens is None:
+            return
+        if self.usage_totals["input_tokens"] < self.compaction_threshold_tokens:
+            return
+        cutoff = len(messages) - COMPACTION_KEEP_RECENT_TURNS * 2
+        if cutoff <= 0:
+            return
+
+        shrunk = 0
+        for msg in messages[:cutoff]:
+            if msg.get("role") != "user" or not isinstance(msg.get("content"), list):
+                continue
+            for block in msg["content"]:
+                if not (isinstance(block, dict) and block.get("type") == "tool_result"):
+                    continue
+                content = block.get("content", "")
+                if isinstance(content, str) and len(content) > COMPACTION_TRUNCATE_TO_CHARS:
+                    remaining = len(content) - COMPACTION_TRUNCATE_TO_CHARS
+                    block["content"] = content[:COMPACTION_TRUNCATE_TO_CHARS] + f"\n...[{remaining} characters truncated by context compaction - this tool call already completed]"
+                    shrunk += 1
+
+        if shrunk:
+            self.compactions += 1
+            self._log(
+                f"\n[context compaction #{self.compactions}] shrank {shrunk} older tool result(s) to stay within budget",
+                color=_ANSI_MUTATING,
+            )
 
     def run(self, task: str) -> List[Dict[str, Any]]:
         all_tools = self.tools.specs + [self.plan.tool_spec()]
@@ -123,12 +192,26 @@ class AgentLoop:
         try:
             for turn in range(1, self.max_turns + 1):
                 self._log(f"\n--- turn {turn} " + "-" * 50, color=_ANSI_TURN)
-                response = self.llm.complete(self.system_prompt, messages, all_tools)
+                self._compact_if_needed(messages)
+
+                streamed_any = False
+
+                def _on_delta(chunk: str, _turn=turn) -> None:
+                    nonlocal streamed_any
+                    streamed_any = True
+                    self._log_inline(chunk, color=_ANSI_REASONING)
+
+                response = self.llm.complete(self.system_prompt, messages, all_tools, on_text_delta=_on_delta)
                 messages.append({"role": "assistant", "content": response.content})
                 for key in self.usage_totals:
                     self.usage_totals[key] += response.usage.get(key, 0)
 
-                if response.text:
+                if streamed_any:
+                    self._log("")  # end the streamed-text line before the next log line
+                elif response.text:
+                    # An adapter that doesn't actually stream (or a scripted test double) never
+                    # calls on_text_delta at all - fall back to printing the whole reply at once,
+                    # so narration still works either way.
                     self._log(response.text, color=_ANSI_REASONING)
 
                 if not response.tool_calls:
@@ -174,6 +257,7 @@ class AgentLoop:
             "stop_reason": self.stop_reason,
             "elapsed_seconds": getattr(self, "elapsed_seconds", None),
             "usage": dict(self.usage_totals),
+            "compactions": self.compactions,
             "total_actions": len(self.actions),
             "mutating_actions": len(mutating),
             "failed_actions": len([a for a in self.actions if a["is_error"]]),
